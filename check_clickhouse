@@ -30,10 +30,6 @@ fail() {
   exit ${STATE_UNKNOWN}
 }
 
-# Commands
-CHCMD="$(which clickhouse-client 2>/dev/null || \
-  fail "Required clickhouse-client command not found.") --format_csv_delimiter | -q "
-
 # Available modes
 # <mode>=<desc>|<default_warning>|<default_critical>
 declare -A modes=(
@@ -51,9 +47,12 @@ declare -A modes=(
 # Functions
 usage() {
   tabs 2
-  echo "Usage: ${PROGNAME} -m <mode> [-w <warning>] [-c <critical>] [-h]"
+  echo "Usage: ${PROGNAME} -s <server> -u <username> -p <password> -m <mode> [-w <warning>] [-c <critical>] [-h]"
   echo
-  echo -e "\t-m <mode>\tMode tu run (see below)"
+  echo -e "\t-s <server>\tClickhouse server to connecto to"
+  echo -e "\t-u <username>\tClickhouse username to be used"
+  echo -e "\t-m <password>\tPassword for the clickhouse username"
+  echo -e "\t-m <mode>\tMode to run (see below)"
   echo -e "\t-w <warning>\tWarning threshold (default depends on the mode, see below)"
   echo -e "\t-c <critical>\tCritical threshold (default depends on the mode, see below)"
   echo -e "\t-h Display this help message"
@@ -73,11 +72,20 @@ usage() {
 }
 
 check_arguments() {
-  while getopts ":hm:w:c:" opt
+  while getopts ":hm:s:u:p:w:c:" opt
   do
     case $opt in
       h )
         usage
+        ;;
+      s )
+        server=$OPTARG
+        ;;
+      u )
+        user=$OPTARG
+        ;;
+      p )
+        password=$OPTARG
         ;;
       m )
         mode=$OPTARG
@@ -120,6 +128,9 @@ check_replication() {
   local mode=$1
   local warn=$2
   local crit=$3
+  local server=$4
+  local user=$5
+  local password=$6
 
   local query="
     SELECT
@@ -155,7 +166,11 @@ check_replication() {
 
   # Check if any database / table has issue
   local state=$STATE_OK
-  result=$($CHCMD "$query" 2> /dev/null)
+
+  CHCMD="$(which clickhouse-client 2>/dev/null || \
+  fail "Required clickhouse-client command not found.") -h $server -u $user --password $password --format_csv_delimiter |  -q "
+
+  result=$($CHCMD  "$query" 2> /dev/null)
   [ $? -ne 0 ] && fail 'Unable to reach clickhouse'
   for row in $result
   do
@@ -238,31 +253,31 @@ main() {
   # Perfrom check based on the mode
   case "$mode" in
     'replication_future_parts')
-      result=$(check_replication 'future_parts' $warn $crit)
+      result=$(check_replication 'future_parts' $warn $crit $server $user $password)
       ;;
     'replication_inserts_in_queue')
-      result=$(check_replication 'inserts_in_queue' $warn $crit)
+      result=$(check_replication 'inserts_in_queue' $warn $crit $server $user $password)
       ;;
     'replication_is_readonly')
-      result=$(check_replication 'is_readonly' $warn $crit)
+      result=$(check_replication 'is_readonly' $warn $crit $server $user $password)
       ;;
     'replication_is_session_expired')
-      result=$(check_replication 'is_session_expired' $warn $crit)
+      result=$(check_replication 'is_session_expired' $warn $crit $server $user $password)
       ;;
     'replication_log_delay')
-      result=$(check_replication 'log_delay' $warn $crit)
+      result=$(check_replication 'log_delay' $warn $crit $server $user $password)
       ;;
     'replication_parts_to_check')
-      result=$(check_replication 'parts_to_check' $warn $crit)
+      result=$(check_replication 'parts_to_check' $warn $crit $server $user $password)
       ;;
     'replication_queue_size')
-      result=$(check_replication 'queue_size' $warn $crit)
+      result=$(check_replication 'queue_size' $warn $crit $server $user $password)
       ;;
     'replication_total_replicas')
-      result=$(check_replication 'total_replicas' $warn $crit)
+      result=$(check_replication 'total_replicas' $warn $crit $server $user $password)
       ;;
     'replication_active_replicas')
-      result=$(check_replication 'active_replicas' $warn $crit)
+      result=$(check_replication 'active_replicas' $warn $crit $server $user $password)
       ;;
   esac
   result=$(echo $result | sed -s 's/,$//')
